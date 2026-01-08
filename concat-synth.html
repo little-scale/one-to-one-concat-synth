@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concatenative Synthesizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0a0c;
+            --bg-panel: #111114;
+            --bg-hover: #1a1a1f;
+            --border: #2a2a30;
+            --text: #e8e8ec;
+            --text-dim: #6a6a75;
+            --accent-target: #ff6b4a;
+            --accent-source: #4ae0ff;
+            --accent-result: #a8ff4a;
+            --waveform-bg: #0d0d10;
+        }
+
+        body {
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        h1 span {
+            color: var(--text-dim);
+            font-weight: 400;
+        }
+
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px 24px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+        }
+
+        input[type="number"] {
+            width: 80px;
+            padding: 8px 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent-source);
+        }
+
+        .toggle-buttons {
+            display: flex;
+            gap: 0;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .toggle-btn {
+            padding: 8px 14px;
+            background: var(--bg-panel);
+            border: none;
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-btn:hover {
+            background: var(--bg-hover);
+        }
+
+        .toggle-btn.active {
+            background: var(--accent-source);
+            color: var(--bg-dark);
+        }
+
+        .transient-options {
+            transition: opacity 0.2s ease;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+            align-items: center;
+        }
+
+        .swap-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-panel);
+            color: var(--text-dim);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .swap-btn:hover {
+            border-color: var(--text-dim);
+            color: var(--text);
+            transform: rotate(180deg);
+        }
+
+        .swap-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .swap-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .drop-zone {
+            background: var(--bg-panel);
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .drop-zone.dragover {
+            border-style: solid;
+            background: var(--bg-hover);
+        }
+
+        .drop-zone.target.dragover,
+        .drop-zone.target.has-audio {
+            border-color: var(--accent-target);
+            box-shadow: 0 0 30px rgba(255, 107, 74, 0.1);
+        }
+
+        .drop-zone.source.dragover,
+        .drop-zone.source.has-audio {
+            border-color: var(--accent-source);
+            box-shadow: 0 0 30px rgba(74, 224, 255, 0.1);
+        }
+
+        .drop-zone-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .drop-zone-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .target .drop-zone-title { color: var(--accent-target); }
+        .source .drop-zone-title { color: var(--accent-source); }
+
+        .file-name {
+            font-size: 12px;
+            color: var(--text-dim);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .waveform-container {
+            height: 120px;
+            background: var(--waveform-bg);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .waveform-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .drop-hint {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--text-dim);
+            pointer-events: none;
+        }
+
+        .drop-hint svg {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
+
+        .drop-hint p {
+            font-size: 12px;
+        }
+
+        .has-audio .drop-hint {
+            display: none;
+        }
+
+        .play-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .target .play-btn {
+            background: var(--accent-target);
+            color: var(--bg-dark);
+        }
+
+        .source .play-btn {
+            background: var(--accent-source);
+            color: var(--bg-dark);
+        }
+
+        .play-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .play-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .play-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .result-section {
+            background: var(--bg-panel);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .result-section.has-result {
+            border-color: var(--accent-result);
+            box-shadow: 0 0 30px rgba(168, 255, 74, 0.1);
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .result-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--accent-result);
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .result-play-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-result);
+            color: var(--bg-dark);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .result-play-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .result-play-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .synth-btn {
+            padding: 10px 24px;
+            background: linear-gradient(135deg, var(--accent-result), #7aff4a);
+            border: none;
+            border-radius: 8px;
+            color: var(--bg-dark);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .synth-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(168, 255, 74, 0.3);
+        }
+
+        .synth-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .download-btn {
+            padding: 10px 20px;
+            background: transparent;
+            border: 1px solid var(--accent-result);
+            border-radius: 8px;
+            color: var(--accent-result);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .download-btn:hover {
+            background: var(--accent-result);
+            color: var(--bg-dark);
+        }
+
+        .download-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .progress-container {
+            margin-top: 16px;
+            display: none;
+        }
+
+        .progress-container.visible {
+            display: block;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-result);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .progress-text {
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+        }
+
+        .analysis-panel {
+            margin-top: 24px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .analysis-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .analysis-canvas-container {
+            background: var(--waveform-bg);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .analysis-canvas-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .analysis-canvas {
+            width: 100%;
+            height: 100px;
+            display: block;
+        }
+
+        .chunk-viz {
+            margin-top: 24px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .chunk-viz-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        .chunk-map {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+        }
+
+        .chunk-cell {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            transition: all 0.1s ease;
+        }
+
+        .chunk-cell:hover {
+            transform: scale(1.5);
+            z-index: 10;
+        }
+
+        .chunk-cell.playing {
+            transform: scale(2);
+            z-index: 20;
+            box-shadow: 0 0 8px currentColor;
+            outline: 2px solid white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .processing .synth-btn {
+            animation: pulse 1s ease infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <h1>Concat <span>Synth</span></h1>
+            </div>
+            <div class="controls-row">
+                <div class="control-group">
+                    <label>Chunk Size (ms)</label>
+                    <input type="number" id="chunkSize" value="50" min="10" max="500" step="10">
+                </div>
+                <div class="control-group">
+                    <label>FFT Size</label>
+                    <input type="number" id="fftSize" value="2048" min="256" max="8192" step="256">
+                </div>
+                <div class="control-group">
+                    <label>Overlap %</label>
+                    <input type="number" id="overlap" value="50" min="0" max="90" step="10">
+                </div>
+                <div class="control-group mode-toggle">
+                    <label>Mode</label>
+                    <div class="toggle-buttons">
+                        <button class="toggle-btn active" data-mode="regular" id="modeRegular">Regular</button>
+                        <button class="toggle-btn" data-mode="transient" id="modeTransient">Transients</button>
+                    </div>
+                </div>
+                <div class="control-group transient-options" id="transientOptions" style="display: none;">
+                    <label>Sensitivity</label>
+                    <input type="number" id="transientSensitivity" value="1.5" min="0.5" max="5" step="0.1">
+                </div>
+                <div class="control-group">
+                    <label>Fade Out %</label>
+                    <input type="number" id="fadeOut" value="0" min="0" max="100" step="5" title="Percentage of chunk to fade out">
+                </div>
+                <div class="control-group">
+                    <label>Crossfade (ms)</label>
+                    <input type="number" id="crossfade" value="0" min="0" max="100" step="5" title="Crossfade between consecutive chunks">
+                </div>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <div class="drop-zone target" id="targetZone">
+                <div class="drop-zone-header">
+                    <span class="drop-zone-title">Target</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="file-name" id="targetFileName"></span>
+                        <button class="play-btn" id="playTarget" disabled>
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="waveform-container">
+                    <canvas class="waveform-canvas" id="targetWaveform"></canvas>
+                    <div class="drop-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drop target audio here</p>
+                    </div>
+                </div>
+            </div>
+
+            <button class="swap-btn" id="swapBtn" disabled title="Swap target and source">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M7 16l-4-4 4-4"/>
+                    <path d="M17 8l4 4-4 4"/>
+                    <path d="M3 12h18"/>
+                </svg>
+            </button>
+
+            <div class="drop-zone source" id="sourceZone">
+                <div class="drop-zone-header">
+                    <span class="drop-zone-title">Source</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="file-name" id="sourceFileName"></span>
+                        <button class="play-btn" id="playSource" disabled>
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="waveform-container">
+                    <canvas class="waveform-canvas" id="sourceWaveform"></canvas>
+                    <div class="drop-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drop source audio here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="result-section" id="resultSection">
+            <div class="result-header">
+                <span class="result-title">Result</span>
+                <div class="result-actions">
+                    <button class="result-play-btn" id="playResult" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="download-btn" id="downloadBtn" disabled>Download WAV</button>
+                    <button class="synth-btn" id="synthBtn" disabled>Synthesize</button>
+                </div>
+            </div>
+            <div class="waveform-container">
+                <canvas class="waveform-canvas" id="resultWaveform"></canvas>
+                <div class="drop-hint">
+                    <p>Result will appear here</p>
+                </div>
+            </div>
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <span class="progress-text" id="progressText">Analyzing...</span>
+            </div>
+            <div class="stats-grid" id="statsGrid" style="display: none;">
+                <div class="stat-item">
+                    <div class="stat-value" id="statChunks">0</div>
+                    <div class="stat-label">Chunks Used</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="statUnique">0</div>
+                    <div class="stat-label">Unique Sources</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="statAvgDist">0</div>
+                    <div class="stat-label">Avg Distance</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="statDuration">0s</div>
+                    <div class="stat-label">Duration</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chunk-viz" id="chunkViz" style="display: none;">
+            <div class="chunk-viz-title">Chunk Mapping</div>
+            <div class="chunk-map" id="chunkMap"></div>
+        </div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        let targetBuffer = null;
+        let sourceBuffer = null;
+        let resultBuffer = null;
+        let currentlyPlaying = null;
+        let currentPlayingButton = null;
+        let synthesisData = null; // Store for chunk playback
+
+        const targetZone = document.getElementById('targetZone');
+        const sourceZone = document.getElementById('sourceZone');
+        const targetWaveform = document.getElementById('targetWaveform');
+        const sourceWaveform = document.getElementById('sourceWaveform');
+        const resultWaveform = document.getElementById('resultWaveform');
+        const playTarget = document.getElementById('playTarget');
+        const playSource = document.getElementById('playSource');
+        const playResult = document.getElementById('playResult');
+        const synthBtn = document.getElementById('synthBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const resultSection = document.getElementById('resultSection');
+        const statsGrid = document.getElementById('statsGrid');
+        const chunkViz = document.getElementById('chunkViz');
+        const chunkMap = document.getElementById('chunkMap');
+        const swapBtn = document.getElementById('swapBtn');
+        const modeRegular = document.getElementById('modeRegular');
+        const modeTransient = document.getElementById('modeTransient');
+        const transientOptions = document.getElementById('transientOptions');
+        
+        let currentMode = 'regular';
+
+        // Mode toggle handlers
+        modeRegular.addEventListener('click', () => {
+            currentMode = 'regular';
+            modeRegular.classList.add('active');
+            modeTransient.classList.remove('active');
+            transientOptions.style.display = 'none';
+        });
+
+        modeTransient.addEventListener('click', () => {
+            currentMode = 'transient';
+            modeTransient.classList.add('active');
+            modeRegular.classList.remove('active');
+            transientOptions.style.display = 'flex';
+        });
+
+        // Setup drop zones
+        function setupDropZone(zone, type) {
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('dragover');
+            });
+
+            zone.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith('audio/')) {
+                    await loadAudio(file, type);
+                }
+            });
+
+            zone.addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'audio/*';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        await loadAudio(file, type);
+                    }
+                };
+                input.click();
+            });
+        }
+
+        setupDropZone(targetZone, 'target');
+        setupDropZone(sourceZone, 'source');
+
+        async function loadAudio(file, type) {
+            const arrayBuffer = await file.arrayBuffer();
+            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            
+            if (type === 'target') {
+                targetBuffer = audioBuffer;
+                document.getElementById('targetFileName').textContent = file.name;
+                targetZone.classList.add('has-audio');
+                playTarget.disabled = false;
+                drawWaveform(audioBuffer, targetWaveform, '#ff6b4a');
+            } else {
+                sourceBuffer = audioBuffer;
+                document.getElementById('sourceFileName').textContent = file.name;
+                sourceZone.classList.add('has-audio');
+                playSource.disabled = false;
+                drawWaveform(audioBuffer, sourceWaveform, '#4ae0ff');
+            }
+
+            synthBtn.disabled = !(targetBuffer && sourceBuffer);
+            swapBtn.disabled = !(targetBuffer || sourceBuffer);
+        }
+
+        function swapTargetAndSource() {
+            // Swap buffers
+            const tempBuffer = targetBuffer;
+            targetBuffer = sourceBuffer;
+            sourceBuffer = tempBuffer;
+            
+            // Swap file names
+            const targetFileNameEl = document.getElementById('targetFileName');
+            const sourceFileNameEl = document.getElementById('sourceFileName');
+            const tempName = targetFileNameEl.textContent;
+            targetFileNameEl.textContent = sourceFileNameEl.textContent;
+            sourceFileNameEl.textContent = tempName;
+            
+            // Update UI states
+            targetZone.classList.toggle('has-audio', !!targetBuffer);
+            sourceZone.classList.toggle('has-audio', !!sourceBuffer);
+            playTarget.disabled = !targetBuffer;
+            playSource.disabled = !sourceBuffer;
+            
+            // Redraw waveforms
+            const targetCtx = targetWaveform.getContext('2d');
+            const sourceCtx = sourceWaveform.getContext('2d');
+            targetCtx.clearRect(0, 0, targetWaveform.width, targetWaveform.height);
+            sourceCtx.clearRect(0, 0, sourceWaveform.width, sourceWaveform.height);
+            
+            if (targetBuffer) drawWaveform(targetBuffer, targetWaveform, '#ff6b4a');
+            if (sourceBuffer) drawWaveform(sourceBuffer, sourceWaveform, '#4ae0ff');
+            
+            // Clear previous result
+            resultBuffer = null;
+            synthesisData = null;
+            playResult.disabled = true;
+            downloadBtn.disabled = true;
+            resultSection.classList.remove('has-result');
+            statsGrid.style.display = 'none';
+            chunkViz.style.display = 'none';
+            
+            const resultCtx = resultWaveform.getContext('2d');
+            resultCtx.clearRect(0, 0, resultWaveform.width, resultWaveform.height);
+            
+            synthBtn.disabled = !(targetBuffer && sourceBuffer);
+        }
+
+        swapBtn.addEventListener('click', swapTargetAndSource);
+
+        function drawWaveform(buffer, canvas, color) {
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            
+            const width = rect.width;
+            const height = rect.height;
+            const data = buffer.getChannelData(0);
+            const step = Math.ceil(data.length / width);
+            
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = color;
+            
+            const centerY = height / 2;
+            
+            for (let i = 0; i < width; i++) {
+                let min = 1.0;
+                let max = -1.0;
+                
+                for (let j = 0; j < step; j++) {
+                    const datum = data[(i * step) + j];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
+                
+                const y1 = centerY + (min * centerY * 0.9);
+                const y2 = centerY + (max * centerY * 0.9);
+                
+                ctx.fillRect(i, y1, 1, y2 - y1 || 1);
+            }
+        }
+
+        function stopCurrentPlayback() {
+            if (currentlyPlaying) {
+                currentlyPlaying.stop();
+                currentlyPlaying = null;
+            }
+            if (currentPlayingButton) {
+                currentPlayingButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                currentPlayingButton = null;
+            }
+        }
+
+        function playBuffer(buffer, button) {
+            // If this button is already playing, stop it
+            if (currentPlayingButton === button && currentlyPlaying) {
+                stopCurrentPlayback();
+                return;
+            }
+            
+            // Stop any current playback
+            stopCurrentPlayback();
+
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start();
+            currentlyPlaying = source;
+            currentPlayingButton = button;
+            
+            button.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+            
+            source.onended = () => {
+                if (currentPlayingButton === button) {
+                    button.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                    currentlyPlaying = null;
+                    currentPlayingButton = null;
+                }
+            };
+        }
+
+        function playChunk(chunkData, sampleRate) {
+            stopCurrentPlayback();
+            
+            const chunkBuffer = audioCtx.createBuffer(1, chunkData.length, sampleRate);
+            chunkBuffer.getChannelData(0).set(chunkData);
+            
+            const source = audioCtx.createBufferSource();
+            source.buffer = chunkBuffer;
+            source.connect(audioCtx.destination);
+            source.start();
+            currentlyPlaying = source;
+            
+            source.onended = () => {
+                currentlyPlaying = null;
+            };
+        }
+
+        playTarget.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (targetBuffer) playBuffer(targetBuffer, playTarget);
+        });
+
+        playSource.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (sourceBuffer) playBuffer(sourceBuffer, playSource);
+        });
+
+        playResult.addEventListener('click', () => {
+            if (resultBuffer) playBuffer(resultBuffer, playResult);
+        });
+
+        // Analysis functions
+        function extractChunks(buffer, chunkSizeMs, overlapPercent) {
+            const sampleRate = buffer.sampleRate;
+            const chunkSamples = Math.floor((chunkSizeMs / 1000) * sampleRate);
+            const hopSamples = Math.floor(chunkSamples * (1 - overlapPercent / 100));
+            const data = buffer.getChannelData(0);
+            const chunks = [];
+            
+            for (let i = 0; i + chunkSamples <= data.length; i += hopSamples) {
+                const chunk = new Float32Array(chunkSamples);
+                for (let j = 0; j < chunkSamples; j++) {
+                    chunk[j] = data[i + j];
+                }
+                chunks.push({
+                    data: chunk,
+                    startSample: i,
+                    features: null
+                });
+            }
+            
+            return chunks;
+        }
+
+        function detectTransients(buffer, sensitivity = 1.5) {
+            const data = buffer.getChannelData(0);
+            const sampleRate = buffer.sampleRate;
+            
+            // Use ~10ms windows for envelope following
+            const windowSize = Math.floor(sampleRate * 0.01);
+            const hopSize = Math.floor(windowSize / 4);
+            
+            // Calculate RMS envelope
+            const envelope = [];
+            for (let i = 0; i + windowSize <= data.length; i += hopSize) {
+                let sum = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    sum += data[i + j] * data[i + j];
+                }
+                envelope.push({
+                    rms: Math.sqrt(sum / windowSize),
+                    sample: i
+                });
+            }
+            
+            if (envelope.length < 3) return [];
+            
+            // Calculate first derivative (onset strength)
+            const onsetStrength = [];
+            for (let i = 1; i < envelope.length; i++) {
+                const diff = envelope[i].rms - envelope[i - 1].rms;
+                onsetStrength.push({
+                    strength: Math.max(0, diff), // Only positive changes (onsets)
+                    sample: envelope[i].sample
+                });
+            }
+            
+            // Calculate adaptive threshold
+            const strengths = onsetStrength.map(o => o.strength);
+            const mean = strengths.reduce((a, b) => a + b, 0) / strengths.length;
+            const std = Math.sqrt(strengths.reduce((a, b) => a + (b - mean) ** 2, 0) / strengths.length);
+            const threshold = mean + sensitivity * std;
+            
+            // Find peaks above threshold
+            const transients = [];
+            const minGapSamples = Math.floor(sampleRate * 0.03); // Minimum 30ms between transients
+            
+            for (let i = 1; i < onsetStrength.length - 1; i++) {
+                const curr = onsetStrength[i];
+                const prev = onsetStrength[i - 1];
+                const next = onsetStrength[i + 1];
+                
+                // Is this a local peak above threshold?
+                if (curr.strength > threshold && 
+                    curr.strength >= prev.strength && 
+                    curr.strength >= next.strength) {
+                    
+                    // Check minimum gap from last transient
+                    if (transients.length === 0 || 
+                        curr.sample - transients[transients.length - 1] >= minGapSamples) {
+                        transients.push(curr.sample);
+                    }
+                }
+            }
+            
+            return transients;
+        }
+
+        function extractTransientChunks(buffer, transients, chunkSizeMs) {
+            const sampleRate = buffer.sampleRate;
+            const chunkSamples = Math.floor((chunkSizeMs / 1000) * sampleRate);
+            const data = buffer.getChannelData(0);
+            const chunks = [];
+            
+            for (const startSample of transients) {
+                // Ensure we don't go past buffer end
+                if (startSample + chunkSamples <= data.length) {
+                    const chunk = new Float32Array(chunkSamples);
+                    for (let j = 0; j < chunkSamples; j++) {
+                        chunk[j] = data[startSample + j];
+                    }
+                    chunks.push({
+                        data: chunk,
+                        startSample: startSample,
+                        features: null
+                    });
+                }
+            }
+            
+            return chunks;
+        }
+
+        function computeFFT(data, fftSize) {
+            const n = Math.min(data.length, fftSize);
+            const paddedData = new Float32Array(fftSize);
+            
+            // Apply Hann window and copy data
+            for (let i = 0; i < n; i++) {
+                const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)));
+                paddedData[i] = data[i] * window;
+            }
+            
+            // Cooley-Tukey FFT (radix-2, in-place)
+            const real = new Float32Array(fftSize);
+            const imag = new Float32Array(fftSize);
+            
+            // Bit-reversal permutation
+            for (let i = 0; i < fftSize; i++) {
+                real[i] = paddedData[reverseBits(i, Math.log2(fftSize))];
+            }
+            
+            // FFT butterfly operations
+            for (let size = 2; size <= fftSize; size *= 2) {
+                const halfSize = size / 2;
+                const angleStep = -2 * Math.PI / size;
+                
+                for (let i = 0; i < fftSize; i += size) {
+                    for (let j = 0; j < halfSize; j++) {
+                        const angle = angleStep * j;
+                        const cos = Math.cos(angle);
+                        const sin = Math.sin(angle);
+                        
+                        const evenIdx = i + j;
+                        const oddIdx = i + j + halfSize;
+                        
+                        const tReal = real[oddIdx] * cos - imag[oddIdx] * sin;
+                        const tImag = real[oddIdx] * sin + imag[oddIdx] * cos;
+                        
+                        real[oddIdx] = real[evenIdx] - tReal;
+                        imag[oddIdx] = imag[evenIdx] - tImag;
+                        real[evenIdx] = real[evenIdx] + tReal;
+                        imag[evenIdx] = imag[evenIdx] + tImag;
+                    }
+                }
+            }
+            
+            // Compute magnitude (only need first half)
+            const magnitude = new Float32Array(fftSize / 2);
+            for (let i = 0; i < fftSize / 2; i++) {
+                magnitude[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
+            }
+            
+            return magnitude;
+        }
+        
+        // Bit reversal lookup table for FFT
+        const bitReversalCache = new Map();
+        
+        function reverseBits(x, numBits) {
+            const key = (x << 16) | numBits;
+            if (bitReversalCache.has(key)) {
+                return bitReversalCache.get(key);
+            }
+            let result = 0;
+            for (let i = 0; i < numBits; i++) {
+                result = (result << 1) | ((x >> i) & 1);
+            }
+            bitReversalCache.set(key, result);
+            return result;
+        }
+        
+        // Pre-compute twiddle factors for common FFT sizes
+        const twiddleCache = new Map();
+        
+        function getTwiddleFactors(size) {
+            if (twiddleCache.has(size)) {
+                return twiddleCache.get(size);
+            }
+            const cos = new Float32Array(size / 2);
+            const sin = new Float32Array(size / 2);
+            const angleStep = -2 * Math.PI / size;
+            for (let j = 0; j < size / 2; j++) {
+                const angle = angleStep * j;
+                cos[j] = Math.cos(angle);
+                sin[j] = Math.sin(angle);
+            }
+            const factors = { cos, sin };
+            twiddleCache.set(size, factors);
+            return factors;
+        }
+
+        // Cache for mel filterbank
+        const melFilterbankCache = new Map();
+        
+        function getMelFilterbank(fftSize, sampleRate, numFilters = 26) {
+            const key = `${fftSize}-${sampleRate}-${numFilters}`;
+            if (melFilterbankCache.has(key)) {
+                return melFilterbankCache.get(key);
+            }
+            
+            const lowFreq = 0;
+            const highFreq = sampleRate / 2;
+            const melLow = 2595 * Math.log10(1 + lowFreq / 700);
+            const melHigh = 2595 * Math.log10(1 + highFreq / 700);
+            
+            const melPoints = new Float32Array(numFilters + 2);
+            const binPoints = new Int32Array(numFilters + 2);
+            
+            for (let i = 0; i < numFilters + 2; i++) {
+                const mel = melLow + (melHigh - melLow) * i / (numFilters + 1);
+                melPoints[i] = 700 * (Math.pow(10, mel / 2595) - 1);
+                binPoints[i] = Math.floor((fftSize + 1) * melPoints[i] / sampleRate);
+            }
+            
+            const filterbank = { binPoints, numFilters };
+            melFilterbankCache.set(key, filterbank);
+            return filterbank;
+        }
+        
+        function computeMFCC(magnitude, sampleRate, numCoeffs = 13) {
+            const numFilters = 26;
+            const { binPoints } = getMelFilterbank(magnitude.length * 2, sampleRate, numFilters);
+            
+            // Apply mel filterbank
+            const melEnergies = new Float32Array(numFilters);
+            for (let i = 0; i < numFilters; i++) {
+                const start = binPoints[i];
+                const mid = binPoints[i + 1];
+                const end = binPoints[i + 2];
+                
+                for (let j = start; j < mid && j < magnitude.length; j++) {
+                    melEnergies[i] += magnitude[j] * (j - start) / (mid - start);
+                }
+                for (let j = mid; j < end && j < magnitude.length; j++) {
+                    melEnergies[i] += magnitude[j] * (1 - (j - mid) / (end - mid));
+                }
+                melEnergies[i] = Math.log(melEnergies[i] + 1e-10);
+            }
+            
+            // DCT to get MFCCs
+            const mfcc = new Float32Array(numCoeffs);
+            for (let i = 0; i < numCoeffs; i++) {
+                for (let j = 0; j < numFilters; j++) {
+                    mfcc[i] += melEnergies[j] * Math.cos(Math.PI * i * (j + 0.5) / numFilters);
+                }
+            }
+            
+            return mfcc;
+        }
+
+        // Pre-computed Hann windows
+        const hannWindowCache = new Map();
+        
+        function getHannWindow(size) {
+            if (hannWindowCache.has(size)) {
+                return hannWindowCache.get(size);
+            }
+            const window = new Float32Array(size);
+            for (let i = 0; i < size; i++) {
+                window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (size - 1)));
+            }
+            hannWindowCache.set(size, window);
+            return window;
+        }
+        
+        function computeFeatures(chunk, sampleRate, fftSize) {
+            const data = chunk.data;
+            const len = data.length;
+            
+            // Time domain features - single pass
+            let rms = 0;
+            let zeroCrossings = 0;
+            let prevSign = data[0] >= 0;
+            
+            for (let i = 0; i < len; i++) {
+                const val = data[i];
+                rms += val * val;
+                const sign = val >= 0;
+                if (i > 0 && sign !== prevSign) zeroCrossings++;
+                prevSign = sign;
+            }
+            rms = Math.sqrt(rms / len);
+            const zcr = zeroCrossings / len;
+            
+            // Frequency domain features
+            const magnitude = computeFFT(data, fftSize);
+            const magLen = magnitude.length;
+            
+            // Spectral centroid and flatness - single pass
+            let centroidNum = 0;
+            let centroidDen = 0;
+            let logSum = 0;
+            let sum = 0;
+            
+            for (let i = 0; i < magLen; i++) {
+                const mag = magnitude[i];
+                centroidNum += i * mag;
+                centroidDen += mag;
+                logSum += Math.log(mag + 1e-10);
+                sum += mag;
+            }
+            
+            const centroid = centroidDen > 0 ? centroidNum / centroidDen / magLen : 0;
+            const geometricMean = Math.exp(logSum / magLen);
+            const arithmeticMean = sum / magLen;
+            const flatness = arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
+            
+            // MFCC
+            const mfcc = computeMFCC(magnitude, sampleRate);
+            
+            // Normalized magnitude spectrum (reduced bins)
+            const spectrumBins = 32;
+            const spectrum = new Float32Array(spectrumBins);
+            const binSize = Math.floor(magLen / spectrumBins);
+            let maxSpec = 0;
+            
+            for (let i = 0; i < spectrumBins; i++) {
+                let binSum = 0;
+                const offset = i * binSize;
+                for (let j = 0; j < binSize; j++) {
+                    binSum += magnitude[offset + j];
+                }
+                spectrum[i] = binSum / binSize;
+                if (spectrum[i] > maxSpec) maxSpec = spectrum[i];
+            }
+            
+            // Normalize
+            if (maxSpec > 0) {
+                const invMax = 1 / maxSpec;
+                for (let i = 0; i < spectrumBins; i++) {
+                    spectrum[i] *= invMax;
+                }
+            }
+            
+            return { rms, zcr, centroid, flatness, mfcc, spectrum };
+        }
+
+        function computeDistance(features1, features2) {
+            // Weighted combination of different feature distances
+            
+            // RMS distance (energy matching)
+            const rmsDist = Math.abs(features1.rms - features2.rms);
+            
+            // ZCR distance (texture matching)
+            const zcrDist = Math.abs(features1.zcr - features2.zcr);
+            
+            // Spectral centroid distance (brightness matching)
+            const centroidDist = Math.abs(features1.centroid - features2.centroid);
+            
+            // Flatness distance (noisiness matching)
+            const flatnessDist = Math.abs(features1.flatness - features2.flatness);
+            
+            // MFCC distance (timbral matching)
+            let mfccDist = 0;
+            for (let i = 0; i < features1.mfcc.length; i++) {
+                mfccDist += Math.pow(features1.mfcc[i] - features2.mfcc[i], 2);
+            }
+            mfccDist = Math.sqrt(mfccDist);
+            
+            // Spectrum distance
+            let specDist = 0;
+            for (let i = 0; i < features1.spectrum.length; i++) {
+                specDist += Math.pow(features1.spectrum[i] - features2.spectrum[i], 2);
+            }
+            specDist = Math.sqrt(specDist);
+            
+            // Weighted sum
+            return (
+                rmsDist * 2.0 +
+                zcrDist * 1.0 +
+                centroidDist * 1.5 +
+                flatnessDist * 0.5 +
+                mfccDist * 3.0 +
+                specDist * 2.0
+            );
+        }
+
+        function findBestMatch(targetChunk, sourceChunks) {
+            let bestIdx = 0;
+            let bestDist = Infinity;
+            
+            for (let i = 0; i < sourceChunks.length; i++) {
+                const dist = computeDistance(targetChunk.features, sourceChunks[i].features);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                }
+            }
+            
+            return { index: bestIdx, distance: bestDist };
+        }
+
+        function applyWindow(chunk, windowType = 'hann') {
+            const result = new Float32Array(chunk.length);
+            for (let i = 0; i < chunk.length; i++) {
+                const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / (chunk.length - 1)));
+                result[i] = chunk[i] * window;
+            }
+            return result;
+        }
+
+        async function synthesize() {
+            const chunkSizeMs = parseInt(document.getElementById('chunkSize').value);
+            const fftSize = parseInt(document.getElementById('fftSize').value);
+            const overlapPercent = parseInt(document.getElementById('overlap').value);
+            const sensitivity = parseFloat(document.getElementById('transientSensitivity').value);
+            
+            progressContainer.classList.add('visible');
+            synthBtn.disabled = true;
+            resultSection.classList.add('processing');
+            
+            let targetChunks, sourceChunks;
+            let targetTransients = null, sourceTransients = null;
+            
+            if (currentMode === 'transient') {
+                // Detect transients in both signals
+                progressText.textContent = 'Detecting target transients...';
+                progressFill.style.width = '5%';
+                await sleep(10);
+                
+                targetTransients = detectTransients(targetBuffer, sensitivity);
+                
+                progressText.textContent = 'Detecting source transients...';
+                progressFill.style.width = '10%';
+                await sleep(10);
+                
+                sourceTransients = detectTransients(sourceBuffer, sensitivity);
+                
+                if (targetTransients.length === 0) {
+                    alert('No transients detected in target. Try lowering sensitivity or using regular mode.');
+                    progressContainer.classList.remove('visible');
+                    synthBtn.disabled = false;
+                    resultSection.classList.remove('processing');
+                    return;
+                }
+                
+                if (sourceTransients.length === 0) {
+                    alert('No transients detected in source. Try lowering sensitivity or using regular mode.');
+                    progressContainer.classList.remove('visible');
+                    synthBtn.disabled = false;
+                    resultSection.classList.remove('processing');
+                    return;
+                }
+                
+                progressText.textContent = `Extracting ${targetTransients.length} target chunks...`;
+                progressFill.style.width = '15%';
+                await sleep(10);
+                
+                targetChunks = extractTransientChunks(targetBuffer, targetTransients, chunkSizeMs);
+                
+                progressText.textContent = `Extracting ${sourceTransients.length} source chunks...`;
+                progressFill.style.width = '20%';
+                await sleep(10);
+                
+                sourceChunks = extractTransientChunks(sourceBuffer, sourceTransients, chunkSizeMs);
+            } else {
+                // Regular mode - extract overlapping chunks
+                progressText.textContent = 'Extracting target chunks...';
+                progressFill.style.width = '10%';
+                await sleep(10);
+                
+                targetChunks = extractChunks(targetBuffer, chunkSizeMs, overlapPercent);
+                
+                progressText.textContent = 'Extracting source chunks...';
+                progressFill.style.width = '20%';
+                await sleep(10);
+                
+                sourceChunks = extractChunks(sourceBuffer, chunkSizeMs, overlapPercent);
+            }
+            
+            // Analyze source chunks in batches to avoid blocking UI
+            progressText.textContent = 'Analyzing source audio...';
+            const batchSize = 100;
+            for (let i = 0; i < sourceChunks.length; i += batchSize) {
+                const end = Math.min(i + batchSize, sourceChunks.length);
+                for (let j = i; j < end; j++) {
+                    sourceChunks[j].features = computeFeatures(sourceChunks[j], sourceBuffer.sampleRate, fftSize);
+                }
+                progressFill.style.width = `${20 + (end / sourceChunks.length) * 30}%`;
+                await sleep(0); // Yield to UI
+            }
+            
+            // Analyze target chunks and find matches in batches
+            progressText.textContent = 'Matching chunks...';
+            const matches = [];
+            let totalDist = 0;
+            const usedSourceIndices = new Set();
+            
+            for (let i = 0; i < targetChunks.length; i += batchSize) {
+                const end = Math.min(i + batchSize, targetChunks.length);
+                for (let j = i; j < end; j++) {
+                    targetChunks[j].features = computeFeatures(targetChunks[j], targetBuffer.sampleRate, fftSize);
+                    const match = findBestMatch(targetChunks[j], sourceChunks);
+                    matches.push(match);
+                    totalDist += match.distance;
+                    usedSourceIndices.add(match.index);
+                }
+                progressFill.style.width = `${50 + (end / targetChunks.length) * 40}%`;
+                await sleep(0); // Yield to UI
+            }
+            
+            // Reconstruct audio
+            progressText.textContent = 'Reconstructing audio...';
+            progressFill.style.width = '90%';
+            await sleep(10);
+            
+            const chunkSamples = Math.floor((chunkSizeMs / 1000) * targetBuffer.sampleRate);
+            const fadeOutPercent = parseInt(document.getElementById('fadeOut').value);
+            const crossfadeMs = parseInt(document.getElementById('crossfade').value);
+            const crossfadeSamples = Math.floor((crossfadeMs / 1000) * targetBuffer.sampleRate);
+            const fadeOutSamples = Math.floor(chunkSamples * (fadeOutPercent / 100));
+            
+            let output, outputLength;
+            
+            if (currentMode === 'transient') {
+                // For transient mode: place matched chunks at target transient positions
+                outputLength = targetBuffer.length;
+                output = new Float32Array(outputLength);
+                
+                // Sort by position for crossfade processing
+                const placements = matches.map((match, i) => ({
+                    match,
+                    startSample: targetTransients[i],
+                    sourceChunk: sourceChunks[match.index].data
+                })).sort((a, b) => a.startSample - b.startSample);
+                
+                for (let i = 0; i < placements.length; i++) {
+                    const { sourceChunk, startSample } = placements[i];
+                    const nextStart = i < placements.length - 1 ? placements[i + 1].startSample : Infinity;
+                    const distanceToNext = nextStart - startSample;
+                    
+                    // Determine effective chunk length (may be cut short by next transient)
+                    let effectiveLength = chunkSamples;
+                    if (crossfadeSamples > 0 && distanceToNext < chunkSamples) {
+                        // Chunk will be crossfaded, extend slightly into next for smooth transition
+                        effectiveLength = Math.min(chunkSamples, distanceToNext + crossfadeSamples);
+                    }
+                    
+                    for (let j = 0; j < effectiveLength && startSample + j < outputLength; j++) {
+                        let gain = 1.0;
+                        
+                        // Fade in at start of chunk (quick attack, ~5ms)
+                        const attackSamples = Math.floor(targetBuffer.sampleRate * 0.005);
+                        if (j < attackSamples) {
+                            gain *= j / attackSamples;
+                        }
+                        
+                        // Apply crossfade out when approaching next transient
+                        if (crossfadeSamples > 0 && distanceToNext < chunkSamples && j >= distanceToNext) {
+                            const fadePos = (j - distanceToNext) / crossfadeSamples;
+                            gain *= Math.max(0, 1 - fadePos);
+                        }
+                        // Apply regular fade out at end of chunk (if no crossfade or chunk ends naturally)
+                        else if (fadeOutSamples > 0 && j >= chunkSamples - fadeOutSamples) {
+                            const fadePos = (j - (chunkSamples - fadeOutSamples)) / fadeOutSamples;
+                            gain *= 1 - fadePos;
+                        }
+                        
+                        output[startSample + j] += sourceChunk[j] * gain;
+                    }
+                }
+            } else {
+                // Regular mode: overlap-add with crossfade
+                const hopSamples = Math.floor(chunkSamples * (1 - overlapPercent / 100));
+                outputLength = (targetChunks.length - 1) * hopSamples + chunkSamples;
+                output = new Float32Array(outputLength);
+                const windowSum = new Float32Array(outputLength);
+                
+                // Determine crossfade samples relative to hop
+                // If crossfade is set, use it; otherwise use default Hann overlap
+                const useCrossfade = crossfadeSamples > 0;
+                const xfadeSamples = useCrossfade ? Math.min(crossfadeSamples, hopSamples) : 0;
+                
+                for (let i = 0; i < matches.length; i++) {
+                    const sourceChunk = sourceChunks[matches[i].index].data;
+                    const startSample = i * hopSamples;
+                    
+                    for (let j = 0; j < chunkSamples && startSample + j < outputLength; j++) {
+                        let window;
+                        
+                        if (useCrossfade) {
+                            // Use linear crossfade envelope instead of Hann
+                            window = 1.0;
+                            
+                            // Linear fade in
+                            if (j < xfadeSamples) {
+                                window = j / xfadeSamples;
+                            }
+                            // Linear fade out
+                            if (j >= chunkSamples - xfadeSamples) {
+                                window = Math.min(window, (chunkSamples - j) / xfadeSamples);
+                            }
+                        } else {
+                            // Default Hann window
+                            window = 0.5 * (1 - Math.cos(2 * Math.PI * j / (chunkSamples - 1)));
+                        }
+                        
+                        // Apply additional fade out on top
+                        if (fadeOutSamples > 0 && j >= chunkSamples - fadeOutSamples) {
+                            const fadePos = (j - (chunkSamples - fadeOutSamples)) / fadeOutSamples;
+                            window *= 1 - fadePos;
+                        }
+                        
+                        output[startSample + j] += sourceChunk[j] * window;
+                        windowSum[startSample + j] += window;
+                    }
+                }
+                
+                // Normalize by window sum
+                for (let i = 0; i < outputLength; i++) {
+                    if (windowSum[i] > 0.01) {
+                        output[i] /= windowSum[i];
+                    }
+                }
+            }
+            
+            // Create result buffer
+            resultBuffer = audioCtx.createBuffer(1, outputLength, targetBuffer.sampleRate);
+            resultBuffer.getChannelData(0).set(output);
+            
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Complete!';
+            
+            // Update UI
+            drawWaveform(resultBuffer, resultWaveform, '#a8ff4a');
+            resultSection.classList.add('has-result');
+            resultSection.classList.remove('processing');
+            playResult.disabled = false;
+            downloadBtn.disabled = false;
+            synthBtn.disabled = false;
+            
+            // Show stats
+            document.getElementById('statChunks').textContent = matches.length;
+            document.getElementById('statUnique').textContent = usedSourceIndices.size;
+            document.getElementById('statAvgDist').textContent = (totalDist / matches.length).toFixed(2);
+            document.getElementById('statDuration').textContent = (resultBuffer.duration).toFixed(2) + 's';
+            
+            // Update labels for transient mode
+            if (currentMode === 'transient') {
+                document.querySelector('#statsGrid .stat-item:first-child .stat-label').textContent = 'Transients Matched';
+            } else {
+                document.querySelector('#statsGrid .stat-item:first-child .stat-label').textContent = 'Chunks Used';
+            }
+            
+            statsGrid.style.display = 'grid';
+            
+            // Visualize chunk mapping
+            visualizeChunkMapping(matches, sourceChunks.length);
+            
+            // Store data for chunk playback
+            synthesisData = {
+                targetChunks,
+                sourceChunks,
+                matches,
+                sampleRate: targetBuffer.sampleRate
+            };
+            
+            setTimeout(() => {
+                progressContainer.classList.remove('visible');
+            }, 1500);
+        }
+
+        function visualizeChunkMapping(matches, sourceCount) {
+            chunkViz.style.display = 'block';
+            chunkMap.innerHTML = '';
+            
+            // Create a color for each source chunk position (normalized)
+            matches.forEach((match, i) => {
+                const cell = document.createElement('div');
+                cell.className = 'chunk-cell';
+                
+                // Color based on source position
+                const hue = (match.index / sourceCount) * 360;
+                const saturation = 70 + (1 - Math.min(match.distance / 5, 1)) * 30;
+                const lightness = 40 + (1 - Math.min(match.distance / 5, 1)) * 20;
+                
+                cell.style.backgroundColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                cell.title = `Target ${i} → Source ${match.index} (dist: ${match.distance.toFixed(3)})\nClick to play`;
+                
+                // Add click handler to play the chunk
+                cell.addEventListener('click', () => {
+                    if (synthesisData) {
+                        const sourceChunk = synthesisData.sourceChunks[match.index];
+                        playChunk(sourceChunk.data, synthesisData.sampleRate);
+                        
+                        // Visual feedback
+                        document.querySelectorAll('.chunk-cell.playing').forEach(c => c.classList.remove('playing'));
+                        cell.classList.add('playing');
+                        
+                        // Remove playing class after chunk duration
+                        const chunkDurationMs = (sourceChunk.data.length / synthesisData.sampleRate) * 1000;
+                        setTimeout(() => {
+                            cell.classList.remove('playing');
+                        }, chunkDurationMs);
+                    }
+                });
+                
+                chunkMap.appendChild(cell);
+            });
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        synthBtn.addEventListener('click', synthesize);
+
+        downloadBtn.addEventListener('click', () => {
+            if (!resultBuffer) return;
+            
+            const wavData = encodeWAV(resultBuffer);
+            const blob = new Blob([wavData], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'concat_synth_result.wav';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        });
+
+        function encodeWAV(audioBuffer) {
+            const numChannels = 1;
+            const sampleRate = audioBuffer.sampleRate;
+            const format = 1; // PCM
+            const bitDepth = 16;
+            
+            const data = audioBuffer.getChannelData(0);
+            const dataLength = data.length * (bitDepth / 8);
+            const buffer = new ArrayBuffer(44 + dataLength);
+            const view = new DataView(buffer);
+            
+            // WAV header
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + dataLength, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, format, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
+            view.setUint16(32, numChannels * (bitDepth / 8), true);
+            view.setUint16(34, bitDepth, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, dataLength, true);
+            
+            // Audio data
+            let offset = 44;
+            for (let i = 0; i < data.length; i++) {
+                const sample = Math.max(-1, Math.min(1, data[i]));
+                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                offset += 2;
+            }
+            
+            return buffer;
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (targetBuffer) drawWaveform(targetBuffer, targetWaveform, '#ff6b4a');
+            if (sourceBuffer) drawWaveform(sourceBuffer, sourceWaveform, '#4ae0ff');
+            if (resultBuffer) drawWaveform(resultBuffer, resultWaveform, '#a8ff4a');
+        });
+    </script>
+</body>
+</html>
